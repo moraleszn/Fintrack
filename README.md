@@ -1,37 +1,49 @@
 # Fintrack
 
-Uma aplicacao de controle financeiro pessoal com API em Python, persistencia em banco de dados e interfaces para visualizacao de dados.
+Aplicacao de controle financeiro pessoal com API FastAPI, persistencia em SQLite e dashboard em Streamlit.
 
 ## Estrutura do Projeto
 
 ```text
 Fintrack/
 ├── backend/
-│   ├── app.py
-│   ├── database.py
-│   ├── models.py
+│   ├── app.py              # rotas da API
+│   ├── database.py         # engine, sessao e configuracao do banco
+│   ├── models.py           # tabelas SQLAlchemy e schemas Pydantic
 │   └── requirements.txt
 ├── frontend/
-│   ├── streamlit_app.py
-│   └── react-app/
+│   ├── streamlit_app.py    # dashboard interno de analise
+│   └── react-app/          # frontend oficial (Vite + React + TypeScript)
 ├── data/
 │   └── exemplo.csv
 ├── notebooks/
 │   └── exploracao.ipynb
 ├── tests/
 │   └── test_app.py
-├── .gitignore
+├── alembic/
+│   ├── env.py              # conexao e metadata usados pelas migracoes
+│   └── versions/           # migracoes geradas
+├── alembic.ini
+├── pytest.ini
 └── README.md
 ```
 
-## Estado Atual
+## Funcionalidades
 
-- API FastAPI criada
-- Configuracao de banco com SQLAlchemy em `backend/database.py`
-- Modelos `Receita` e `Despesa` definidos em `backend/models.py`
-- Endpoint de criacao de receitas usando sessao do banco (em progresso de migracao)
-- Streamlit com dashboard inicial
-- Teste inicial do endpoint raiz
+- CRUD completo de receitas e despesas (`POST`, `GET`, `PATCH`, `DELETE`).
+- Filtros por periodo e categoria, com paginacao (`limit`/`offset`) nas listagens.
+- Resumo de totais e saldo, e consolidacao por categoria.
+- Valores monetarios com `Decimal` e `Numeric(12, 2)` (evita erros de ponto flutuante).
+- Validacao: valor positivo com ate 2 casas decimais e descricao/categoria nao vazias.
+- CORS configurado para permitir um frontend React futuro.
+- Dashboard Streamlit com metricas, tabelas, formularios de edicao/exclusao e grafico por categoria.
+- Frontend React (Vite + TypeScript) com resumo, CRUD de lancamentos, filtros e saldo por categoria.
+- Migracoes de banco com Alembic (esquema versionado, sem depender de `create_all`).
+- Testes com banco SQLite em memoria, isolados entre si.
+
+## Requisitos
+
+- Python 3.10 ou superior
 
 ## Como Executar Localmente
 
@@ -51,35 +63,119 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-### 2. Instalar dependencias do backend
+### 2. Instalar dependencias
 
 ```bash
 pip install -r backend/requirements.txt
 ```
 
-### 3. Rodar API
-
-```bash
-cd backend
-uvicorn app:app --reload
-```
-
-A API ficara disponivel em:
-- http://127.0.0.1:8000
-- Documentacao interativa: http://127.0.0.1:8000/docs
-
-### 4. Rodar testes
+### 3. Rodar migracoes (primeira vez ou apos mudar os modelos)
 
 Na raiz do projeto:
+
+```bash
+alembic upgrade head
+```
+
+Isso cria/atualiza as tabelas do banco. Em um clone novo, rode antes de subir a API.
+
+### 4. Rodar API
+
+Na raiz do projeto:
+
+```bash
+uvicorn backend.app:app --reload
+```
+
+- API: http://127.0.0.1:8000
+- Documentacao interativa: http://127.0.0.1:8000/docs
+
+### 5. Rodar testes
 
 ```bash
 pytest -q
 ```
 
-### 5. Rodar frontend Streamlit
+### 6. Rodar dashboard Streamlit
 
-Na raiz do projeto:
+Em outro terminal, na raiz do projeto:
 
 ```bash
 streamlit run frontend/streamlit_app.py
 ```
+
+O dashboard assume que a API esteja em `http://127.0.0.1:8000`. Para trocar, use o campo "URL da API" na sidebar ou a variavel `FINTRACK_API_URL`.
+
+### 7. Rodar frontend React (Vite)
+
+Em outro terminal:
+
+```bash
+cd frontend/react-app
+npm install
+npm run dev
+```
+
+- Frontend: http://localhost:5173
+- Build de producao: `npm run build` (gera `frontend/react-app/dist`)
+- Lint: `npm run lint`
+
+O frontend le `VITE_API_URL` (padrao `http://127.0.0.1:8000`). Copie `.env.example` para `.env` se precisar trocar.
+
+## Variaveis de Ambiente
+
+| Variavel | Padrao | Finalidade |
+| --- | --- | --- |
+| `FINTRACK_DATABASE_URL` | `sqlite:///./fintrack.db` | URL do banco usado pela API |
+| `FINTRACK_CORS_ORIGINS` | `localhost:3000`, `127.0.0.1:3000`, `localhost:5173`, `127.0.0.1:5173`, `localhost:8501`, `127.0.0.1:8501` | Origens permitidas no CORS (separadas por virgula) |
+| `FINTRACK_API_URL` | `http://127.0.0.1:8000` | URL usada pelo Streamlit para chamar a API |
+| `VITE_API_URL` | `http://127.0.0.1:8000` | URL usada pelo frontend React para chamar a API |
+
+Exemplo (PowerShell):
+
+```powershell
+$env:FINTRACK_DATABASE_URL = "sqlite:///./fintrack_dev.db"
+```
+
+## Endpoints
+
+| Metodo | Rota | Descricao |
+| --- | --- | --- |
+| `GET` | `/` | Mensagem de boas-vindas |
+| `POST` | `/receitas` | Cria receita |
+| `GET` | `/receitas` | Lista receitas com filtros e paginacao |
+| `GET` | `/receitas/{id}` | Busca uma receita |
+| `PATCH` | `/receitas/{id}` | Atualiza campos enviados |
+| `DELETE` | `/receitas/{id}` | Exclui receita (204) |
+| `POST` | `/despesas` | Cria despesa |
+| `GET` | `/despesas` | Lista despesas com filtros e paginacao |
+| `GET` | `/despesas/{id}` | Busca uma despesa |
+| `PATCH` | `/despesas/{id}` | Atualiza campos enviados |
+| `DELETE` | `/despesas/{id}` | Exclui despesa (204) |
+| `GET` | `/resumo` | Totais e saldo, com filtros |
+| `GET` | `/resumo/categorias` | Totais e saldo por categoria, com filtro de periodo |
+
+Exemplo de corpo para criacao:
+
+```json
+{
+  "descricao": "Salario",
+  "valor": "5500.00",
+  "data": "2026-06-26",
+  "categoria": "Trabalho"
+}
+```
+
+## Decisoes que valem estudar
+
+- **Decimal em vez de float:** `0.1 + 0.2` em ponto flutuante nao da `0.3`. Em dinheiro isso gera divergencia; `Decimal` com 2 casas resolve. Note que a API serializa `Decimal` como string JSON (`"5500.00"`), por isso o Streamlit converte com `float()` ao exibir.
+- **Testes isolados:** a fixture `client` cria um banco SQLite em memoria (`StaticPool`) e substitui a dependencia `get_db` com `app.dependency_overrides`. Nenhum teste escreve no banco de desenvolvimento.
+- **Schemas separados:** `Create`, `Update` e `Read` evitam que o cliente envie `id` ou campos que nao deveria. No `PATCH`, `exclude_unset=True` so atualiza o que foi enviado.
+- **Heranca de modelos:** `Receita` e `Despesa` herdam de `Lancamento` (abstrato), evitando repetir as mesmas colunas.
+- **Alembic em vez de `create_all`:** o esquema do banco e versionado em migracoes (`alembic/versions`). Para criar uma nova migracao apos mudar `models.py`, rode `alembic revision --autogenerate -m "descricao"` e revise o arquivo antes de aplicar com `alembic upgrade head`.
+
+## Observacoes
+
+- O diretorio `frontend/react-app` foi migrado do Create React App para Vite + React + TypeScript e ja consome a API.
+- O Streamlit permanece como dashboard interno de analise, enquanto o React e o frontend oficial.
+- O banco padrao `fintrack.db` e criado pelas migracoes (`alembic upgrade head`) e esta ignorado pelo Git. A API nao cria mais o schema automaticamente.
