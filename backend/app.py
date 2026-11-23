@@ -1,6 +1,7 @@
 # app.py
 # Ponto de entrada da API do Fintrack
 
+import calendar
 import os
 from datetime import date
 from decimal import Decimal
@@ -8,7 +9,8 @@ from typing import Generator, List
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
@@ -18,10 +20,20 @@ from backend.models import (
     DespesaCreate,
     DespesaRead,
     DespesaUpdate,
+    Orcamento,
+    OrcamentoCreate,
+    OrcamentoDesempenhoRead,
+    OrcamentoRead,
+    OrcamentoUpdate,
+    ProcessamentoRead,
     Receita,
     ReceitaCreate,
     ReceitaRead,
     ReceitaUpdate,
+    Recorrencia,
+    RecorrenciaCreate,
+    RecorrenciaRead,
+    RecorrenciaUpdate,
     ResumoRead,
 )
 
@@ -76,6 +88,34 @@ def para_moeda(valor) -> Decimal:
     return Decimal(str(valor if valor is not None else Decimal("0"))).quantize(
         Decimal("0.01")
     )
+
+
+def periodo_do_mes(ano: int, mes: int) -> tuple[date, date]:
+    ultimo_dia = calendar.monthrange(ano, mes)[1]
+    return date(ano, mes, 1), date(ano, mes, ultimo_dia)
+
+
+def gerar_ocorrencias(recorrencia: Recorrencia, ate: date) -> list[date]:
+    """Datas de vencimento da recorrencia ate a data limite (inclusive)."""
+    limite = ate
+    if recorrencia.data_fim is not None and recorrencia.data_fim < limite:
+        limite = recorrencia.data_fim
+    if limite < recorrencia.data_inicio:
+        return []
+
+    datas: list[date] = []
+    ano, mes = recorrencia.data_inicio.year, recorrencia.data_inicio.month
+    while (ano, mes) <= (limite.year, limite.month):
+        ultimo_dia = calendar.monthrange(ano, mes)[1]
+        dia = min(recorrencia.dia_vencimento, ultimo_dia)
+        data_ocorrencia = date(ano, mes, dia)
+        if recorrencia.data_inicio <= data_ocorrencia <= limite:
+            datas.append(data_ocorrencia)
+        mes += 1
+        if mes > 12:
+            mes = 1
+            ano += 1
+    return datas
 
 
 def aplicar_filtros_resumo(stmt, modelo, data_inicio, data_fim, categoria):
@@ -282,3 +322,288 @@ def resumo_por_categoria(
         )
         for categoria in categorias
     ]
+
+
+@app.post(
+    "/orcamentos", response_model=OrcamentoRead, status_code=status.HTTP_201_CREATED
+)
+def criar_orcamento(
+    orcamento: OrcamentoCreate, db: Session = Depends(get_db)
+) -> Orcamento:
+    db_orcamento = Orcamento(**orcamento.model_dump())
+    db.add(db_orcamento)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Ja existe orcamento para esta categoria no periodo "
+                f"{orcamento.mes:02d}/{orcamento.ano}."
+            ),
+        )
+    db.refresh(db_orcamento)
+    return db_orcamento
+
+
+@app.get("/orcamentos", response_model=List[OrcamentoRead])
+def listar_orcamentos(
+    ano: int | None = Query(default=None, ge=2000, le=2100),
+    mes: int | None = Query(default=None, ge=1, le=12),
+    db: Session = Depends(get_db),
+) -> List[Orcamento]:
+    stmt = select(Orcamento)
+    if ano is not None:
+        stmt = stmt.where(Orcamento.ano == ano)
+    if mes is not None:
+        stmt = stmt.where(Orcamento.mes == mes)
+    stmt = stmt.order_by(Orcamento.ano, Orcamento.mes, Orcamento.categoria)
+    return list(db.execute(stmt).scalars().all())
+
+
+@app.get("/orcamentos/desempenho", response_model=List[OrcamentoDesempenhoRead])
+def desempenho_orcamentos(
+    ano: int = Query(ge=2000, le=2100),
+    mes: int = Query(ge=1, le=12),
+    db: Session = Depends(get_db),
+) -> List[OrcamentoDesempenhoRead]:
+    inicio, fim = periodo_do_mes(ano, mes)
+
+    stmt_gastos = (
+        select(Despesa.categoria, func.sum(Despesa.valor))
+        .where(Despesa.data >= inicio, Despesa.data <= fim)
+        .group_by(Despesa.categoria)
+    )
+    gastos = {
+        categoria: para_moeda(total)
+        for categoria, total in db.execute(stmt_gastos).all()
+    }
+
+    orcamentos = list(
+        db.execute(
+            select(Orcamento).where(Orcamento.ano == ano, Orcamento.mes == mes)
+        )
+        .scalars()
+        .all()
+    )
+
+    hoje = date.today()
+    dias_no_mes = calendar.monthrange(ano, mes)[1]
+    if (ano, mes) < (hoje.year, hoje.month):
+        dias_decorridos = dias_no_mes
+    elif (ano, mes) == (hoje.year, hoje.month):
+        dias_decorridos = hoje.day
+    else:
+        dias_decorridos = 0
+
+    resultado: list[OrcamentoDesempenhoRead] = []
+    for orcamento in orcamentos:
+        realizado = gastos.get(orcamento.categoria, Decimal("0.00"))
+        limite = para_moeda(orcamento.valor_limite)
+        percentual = para_moeda(realizado / limite * Decimal("100"))
+        if dias_decorridos > 0:
+            projecao = para_moeda(
+                realizado * Decimal(dias_no_mes) / Decimal(dias_decorridos)
+            )
+        else:
+            projecao = realizado
+
+        if realizado > limite:
+            situacao = "estourado"
+        elif percentual >= Decimal("80") or projecao > limite:
+            situacao = "atencao"
+        else:
+            situacao = "ok"
+
+        resultado.append(
+            OrcamentoDesempenhoRead(
+                id=orcamento.id,
+                categoria=orcamento.categoria,
+                valor_limite=limite,
+                total_despesas=realizado,
+                disponivel=para_moeda(limite - realizado),
+                percentual_usado=percentual,
+                projecao_fim_mes=projecao,
+                status=situacao,
+            )
+        )
+
+    resultado.sort(key=lambda item: item.percentual_usado, reverse=True)
+    return resultado
+
+
+@app.get("/orcamentos/{id_orcamento}", response_model=OrcamentoRead)
+def buscar_orcamento(
+    id_orcamento: int, db: Session = Depends(get_db)
+) -> Orcamento:
+    return buscar_ou_404(db, Orcamento, id_orcamento)
+
+
+@app.patch("/orcamentos/{id_orcamento}", response_model=OrcamentoRead)
+def atualizar_orcamento(
+    id_orcamento: int, orcamento: OrcamentoUpdate, db: Session = Depends(get_db)
+) -> Orcamento:
+    db_orcamento = buscar_ou_404(db, Orcamento, id_orcamento)
+    for campo, valor in orcamento.model_dump(
+        exclude_unset=True, exclude_none=True
+    ).items():
+        setattr(db_orcamento, campo, valor)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ja existe orcamento para esta categoria no periodo.",
+        )
+    db.refresh(db_orcamento)
+    return db_orcamento
+
+
+@app.delete(
+    "/orcamentos/{id_orcamento}", status_code=status.HTTP_204_NO_CONTENT
+)
+def excluir_orcamento(
+    id_orcamento: int, db: Session = Depends(get_db)
+) -> Response:
+    db_orcamento = buscar_ou_404(db, Orcamento, id_orcamento)
+    db.delete(db_orcamento)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post(
+    "/recorrencias",
+    response_model=RecorrenciaRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def criar_recorrencia(
+    recorrencia: RecorrenciaCreate, db: Session = Depends(get_db)
+) -> Recorrencia:
+    db_recorrencia = Recorrencia(**recorrencia.model_dump())
+    db.add(db_recorrencia)
+    db.commit()
+    db.refresh(db_recorrencia)
+    return db_recorrencia
+
+
+@app.get("/recorrencias", response_model=List[RecorrenciaRead])
+def listar_recorrencias(
+    tipo: str | None = Query(default=None, pattern="^(receita|despesa)$"),
+    ativa: bool | None = None,
+    db: Session = Depends(get_db),
+) -> List[Recorrencia]:
+    stmt = select(Recorrencia)
+    if tipo is not None:
+        stmt = stmt.where(Recorrencia.tipo == tipo)
+    if ativa is not None:
+        stmt = stmt.where(Recorrencia.ativa.is_(ativa))
+    stmt = stmt.order_by(Recorrencia.descricao)
+    return list(db.execute(stmt).scalars().all())
+
+
+@app.post("/recorrencias/processar", response_model=ProcessamentoRead)
+def processar_recorrencias(
+    ate: date | None = None, db: Session = Depends(get_db)
+) -> ProcessamentoRead:
+    limite = ate if ate is not None else date.today()
+    geradas = 0
+    ignoradas = 0
+
+    recorrencias = list(
+        db.execute(
+            select(Recorrencia).where(Recorrencia.ativa.is_(True))
+        )
+        .scalars()
+        .all()
+    )
+
+    for recorrencia in recorrencias:
+        modelo = Receita if recorrencia.tipo == "receita" else Despesa
+        datas = gerar_ocorrencias(recorrencia, limite)
+        if not datas:
+            continue
+
+        existentes = set(
+            db.execute(
+                select(modelo.data).where(
+                    modelo.recorrencia_id == recorrencia.id,
+                    modelo.data.in_(datas),
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        for data_ocorrencia in datas:
+            if data_ocorrencia in existentes:
+                ignoradas += 1
+                continue
+            db.add(
+                modelo(
+                    descricao=recorrencia.descricao,
+                    valor=recorrencia.valor,
+                    data=data_ocorrencia,
+                    categoria=recorrencia.categoria,
+                    recorrencia_id=recorrencia.id,
+                )
+            )
+            geradas += 1
+
+    db.commit()
+    return ProcessamentoRead(ate=limite, geradas=geradas, ignoradas=ignoradas)
+
+
+@app.get("/recorrencias/{id_recorrencia}", response_model=RecorrenciaRead)
+def buscar_recorrencia(
+    id_recorrencia: int, db: Session = Depends(get_db)
+) -> Recorrencia:
+    return buscar_ou_404(db, Recorrencia, id_recorrencia)
+
+
+@app.patch("/recorrencias/{id_recorrencia}", response_model=RecorrenciaRead)
+def atualizar_recorrencia(
+    id_recorrencia: int,
+    recorrencia: RecorrenciaUpdate,
+    db: Session = Depends(get_db),
+) -> Recorrencia:
+    db_recorrencia = buscar_ou_404(db, Recorrencia, id_recorrencia)
+    for campo, valor in recorrencia.model_dump(
+        exclude_unset=True, exclude_none=True
+    ).items():
+        setattr(db_recorrencia, campo, valor)
+
+    if (
+        db_recorrencia.data_fim is not None
+        and db_recorrencia.data_fim < db_recorrencia.data_inicio
+    ):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="data_fim deve ser maior ou igual a data_inicio.",
+        )
+
+    db.commit()
+    db.refresh(db_recorrencia)
+    return db_recorrencia
+
+
+@app.delete(
+    "/recorrencias/{id_recorrencia}", status_code=status.HTTP_204_NO_CONTENT
+)
+def excluir_recorrencia(
+    id_recorrencia: int, db: Session = Depends(get_db)
+) -> Response:
+    db_recorrencia = buscar_ou_404(db, Recorrencia, id_recorrencia)
+
+    for modelo in (Receita, Despesa):
+        db.execute(
+            update(modelo)
+            .where(modelo.recorrencia_id == id_recorrencia)
+            .values(recorrencia_id=None)
+        )
+
+    db.delete(db_recorrencia)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
