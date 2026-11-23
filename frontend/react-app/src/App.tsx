@@ -3,17 +3,27 @@ import { API_URL } from "./api"
 import { Categorias } from "./components/Categorias"
 import { Filtros } from "./components/Filtros"
 import { Lancamentos } from "./components/Lancamentos"
+import { Orcamentos } from "./components/Orcamentos"
+import { Recorrencias } from "./components/Recorrencias"
 import { Resumo } from "./components/Resumo"
 import {
   IconeAtualizar,
   IconeCategoria,
   IconeDespesa,
+  IconeOrcamento,
   IconeReceita,
+  IconeRecorrencia,
   IconeResumo,
 } from "./components/Icones"
 import type { Filtros as FiltrosApi } from "./types"
 
-type Aba = "resumo" | "receitas" | "despesas" | "categorias"
+type Aba =
+  | "resumo"
+  | "orcamentos"
+  | "recorrencias"
+  | "receitas"
+  | "despesas"
+  | "categorias"
 
 const ABAS: {
   id: Aba
@@ -22,6 +32,18 @@ const ABAS: {
   Icone: typeof IconeResumo
 }[] = [
   { id: "resumo", rotulo: "Resumo", titulo: "Visao geral", Icone: IconeResumo },
+  {
+    id: "orcamentos",
+    rotulo: "Orcamentos",
+    titulo: "Orcamentos",
+    Icone: IconeOrcamento,
+  },
+  {
+    id: "recorrencias",
+    rotulo: "Recorrencias",
+    titulo: "Recorrencias",
+    Icone: IconeRecorrencia,
+  },
   { id: "receitas", rotulo: "Receitas", titulo: "Receitas", Icone: IconeReceita },
   { id: "despesas", rotulo: "Despesas", titulo: "Despesas", Icone: IconeDespesa },
   {
@@ -51,6 +73,13 @@ export default function App() {
   ]
     .filter(Boolean)
     .join("  |  ")
+
+  const descricaoTopo =
+    aba === "orcamentos"
+      ? "Planejado x realizado no mes selecionado."
+      : aba === "recorrencias"
+        ? "Lancamentos fixos gerados sob demanda, sem duplicar."
+        : descricaoFiltros || "Sem filtros aplicados: todos os lancamentos."
 
   return (
     <div className="layout">
@@ -95,9 +124,7 @@ export default function App() {
         <header className="topo">
           <div className="topo-texto">
             <h1>{abaAtual.titulo}</h1>
-            <p>
-              {descricaoFiltros || "Sem filtros aplicados: todos os lancamentos."}
-            </p>
+            <p>{descricaoTopo}</p>
           </div>
           <button type="button" className="botao neutro" onClick={atualizar}>
             <IconeAtualizar />
@@ -107,6 +134,10 @@ export default function App() {
 
         <div className="aba-conteudo">
           {aba === "resumo" && <Resumo filtros={filtros} versao={versao} />}
+          {aba === "orcamentos" && <Orcamentos versao={versao} />}
+          {aba === "recorrencias" && (
+            <Recorrencias versao={versao} onMutacao={atualizar} />
+          )}
           {aba === "receitas" && (
             <Lancamentos
               tipo="receitas"

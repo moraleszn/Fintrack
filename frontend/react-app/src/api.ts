@@ -3,6 +3,14 @@ import type {
   Filtros,
   Lancamento,
   LancamentoInput,
+  Orcamento,
+  OrcamentoAtualizacao,
+  OrcamentoDesempenho,
+  OrcamentoInput,
+  ProcessamentoResultado,
+  Recorrencia,
+  RecorrenciaAtualizacao,
+  RecorrenciaInput,
   Resumo,
   TipoLancamento,
 } from "./types"
@@ -110,4 +118,74 @@ export function obterResumoPorCategoria(
   return requisitar<CategoriaResumo[]>(
     `/resumo/categorias${paraQueryString({ data_inicio: filtros.data_inicio, data_fim: filtros.data_fim })}`,
   )
+}
+
+export function listarOrcamentos(
+  ano: number,
+  mes: number,
+): Promise<Orcamento[]> {
+  return requisitar<Orcamento[]>(`/orcamentos?ano=${ano}&mes=${mes}`)
+}
+
+export function criarOrcamento(dados: OrcamentoInput): Promise<Orcamento> {
+  return requisitar<Orcamento>("/orcamentos", {
+    method: "POST",
+    body: JSON.stringify(dados),
+  })
+}
+
+export function atualizarOrcamento(
+  id: number,
+  dados: OrcamentoAtualizacao,
+): Promise<Orcamento> {
+  return requisitar<Orcamento>(`/orcamentos/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(dados),
+  })
+}
+
+export function excluirOrcamento(id: number): Promise<void> {
+  return requisitar<void>(`/orcamentos/${id}`, { method: "DELETE" })
+}
+
+export function obterDesempenhoOrcamentos(
+  ano: number,
+  mes: number,
+): Promise<OrcamentoDesempenho[]> {
+  return requisitar<OrcamentoDesempenho[]>(
+    `/orcamentos/desempenho?ano=${ano}&mes=${mes}`,
+  )
+}
+
+export function listarRecorrencias(): Promise<Recorrencia[]> {
+  return requisitar<Recorrencia[]>("/recorrencias")
+}
+
+export function criarRecorrencia(
+  dados: RecorrenciaInput,
+): Promise<Recorrencia> {
+  return requisitar<Recorrencia>("/recorrencias", {
+    method: "POST",
+    body: JSON.stringify(dados),
+  })
+}
+
+export function atualizarRecorrencia(
+  id: number,
+  dados: RecorrenciaAtualizacao,
+): Promise<Recorrencia> {
+  return requisitar<Recorrencia>(`/recorrencias/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(dados),
+  })
+}
+
+export function excluirRecorrencia(id: number): Promise<void> {
+  return requisitar<void>(`/recorrencias/${id}`, { method: "DELETE" })
+}
+
+export function processarRecorrencias(): Promise<ProcessamentoResultado> {
+  return requisitar<ProcessamentoResultado>("/recorrencias/processar", {
+    method: "POST",
+  })
 }

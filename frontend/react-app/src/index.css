@@ -182,7 +182,8 @@ select {
   color: #475569;
 }
 
-.campo input {
+.campo input,
+.campo select {
   background: #fff;
   border: 1px solid var(--borda-forte);
   border-radius: 9px;
@@ -196,12 +197,14 @@ select {
     box-shadow 0.15s ease;
 }
 
-.campo input:focus {
+.campo input:focus,
+.campo select:focus {
   border-color: var(--primaria);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
 }
 
-.campo input:disabled {
+.campo input:disabled,
+.campo select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   background: #f1f5f9;
@@ -722,6 +725,201 @@ select {
   text-align: right;
 }
 
+.orcamento-topo {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.orcamento-controles {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.orcamento-controles .campo input {
+  min-width: 150px;
+}
+
+.orcamento-totais {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.orcamento-total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.orcamento-total span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--texto-suave);
+  font-weight: 700;
+}
+
+.orcamento-total strong {
+  font-size: 20px;
+  letter-spacing: -0.3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.orcamento-total.gasto strong {
+  color: var(--despesa);
+}
+
+.orcamento-total.positivo strong {
+  color: var(--positivo);
+}
+
+.orcamento-total.negativo strong {
+  color: var(--negativo);
+}
+
+.orcamentos-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.orcamento-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.orcamento-item.atencao {
+  border-color: #fde68a;
+  background: #fffdf5;
+}
+
+.orcamento-item.estourado {
+  border-color: #fecaca;
+  background: #fff8f8;
+}
+
+.orcamento-item-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orcamento-ident {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.orcamento-acoes {
+  display: flex;
+  gap: 6px;
+}
+
+.orcamento-valores {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.orcamento-valores strong {
+  font-size: 22px;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.orcamento-valores span {
+  font-size: 13px;
+  color: var(--texto-suave);
+}
+
+.orcamento-item.estourado .orcamento-valores strong {
+  color: var(--negativo);
+}
+
+.barra {
+  height: 9px;
+  border-radius: 999px;
+  background: #eef2f7;
+  overflow: hidden;
+}
+
+.barra-preenchida {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--positivo);
+  transition: width 0.3s ease;
+}
+
+.barra-preenchida.atencao {
+  background: #f59e0b;
+}
+
+.barra-preenchida.estourado {
+  background: var(--negativo);
+}
+
+.orcamento-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12.5px;
+  color: var(--texto-suave);
+}
+
+.selo {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.selo.ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.selo.atencao {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.selo.estourado {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.selo.ativa {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.selo.pausada {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.recorrencia-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
@@ -769,6 +967,16 @@ select {
   .topo {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .orcamento-controles {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .orcamento-item-topo {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .topo .botao {
