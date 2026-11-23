@@ -33,6 +33,8 @@ Fintrack/
 - CRUD completo de receitas e despesas (`POST`, `GET`, `PATCH`, `DELETE`).
 - Filtros por periodo e categoria, com paginacao (`limit`/`offset`) nas listagens.
 - Resumo de totais e saldo, e consolidacao por categoria.
+- Orcamento mensal por categoria com planejado x realizado, projecao de gasto ate o fim do mes e status (`ok`, `atencao`, `estourado`).
+- Recorrencias (receita/despesa) com dia de vencimento, inicio/fim e pausa; geracao sob demanda idempotente (rodar de novo nao duplica).
 - Valores monetarios com `Decimal` e `Numeric(12, 2)` (evita erros de ponto flutuante).
 - Validacao: valor positivo com ate 2 casas decimais e descricao/categoria nao vazias.
 - CORS configurado para permitir um frontend React futuro.
@@ -154,6 +156,18 @@ $env:FINTRACK_DATABASE_URL = "sqlite:///./fintrack_dev.db"
 | `DELETE` | `/despesas/{id}` | Exclui despesa (204) |
 | `GET` | `/resumo` | Totais e saldo, com filtros |
 | `GET` | `/resumo/categorias` | Totais e saldo por categoria, com filtro de periodo |
+| `POST` | `/orcamentos` | Cria orcamento mensal (409 se ja existir para a categoria no periodo) |
+| `GET` | `/orcamentos` | Lista orcamentos, filtravel por `ano` e `mes` |
+| `GET` | `/orcamentos/{id}` | Busca um orcamento |
+| `PATCH` | `/orcamentos/{id}` | Atualiza categoria e/ou limite |
+| `DELETE` | `/orcamentos/{id}` | Exclui orcamento (204) |
+| `GET` | `/orcamentos/desempenho` | Planejado x realizado, projecao e status por categoria (`ano` e `mes` obrigatorios) |
+| `POST` | `/recorrencias` | Cria recorrencia (receita ou despesa) |
+| `GET` | `/recorrencias` | Lista recorrencias, filtravel por `tipo` e `ativa` |
+| `GET` | `/recorrencias/{id}` | Busca uma recorrencia |
+| `PATCH` | `/recorrencias/{id}` | Atualiza valor, categoria, dia, data fim ou pausa |
+| `DELETE` | `/recorrencias/{id}` | Exclui a recorrencia mantendo os lancamentos ja gerados |
+| `POST` | `/recorrencias/processar` | Gera lancamentos ate `ate` (padrao hoje); idempotente |
 
 Exemplo de corpo para criacao:
 
@@ -172,6 +186,12 @@ Exemplo de corpo para criacao:
 - **Testes isolados:** a fixture `client` cria um banco SQLite em memoria (`StaticPool`) e substitui a dependencia `get_db` com `app.dependency_overrides`. Nenhum teste escreve no banco de desenvolvimento.
 - **Schemas separados:** `Create`, `Update` e `Read` evitam que o cliente envie `id` ou campos que nao deveria. No `PATCH`, `exclude_unset=True` so atualiza o que foi enviado.
 - **Heranca de modelos:** `Receita` e `Despesa` herdam de `Lancamento` (abstrato), evitando repetir as mesmas colunas.
+- **Status calculado no backend:** `estourado` compara realizado x limite; `atencao` cobre 80%+ do limite ou projecao acima dele. A projecao usa `realizado / dias_decorridos * dias_no_mes`, entao meses passados resultam em projecao igual ao realizado. Manter essa regra no backend evita divergencia entre React, Streamlit e futuros clientes.
+- **Unicidade no banco, nao so no codigo:** `UniqueConstraint(categoria, ano, mes)` garante um orcamento por categoria/mes mesmo com requisicoes concorrentes; a API traduz `IntegrityError` em `409 Conflict`.
+- **Ordem de rotas:** `/orcamentos/desempenho` e `/recorrencias/processar` sao declaradas antes de `/{id}` porque `{id}` recebe `int`; se viessem antes, o nome cairia no validador e retornaria 422.
+- **Idempotencia:** gerar recorrencias checa as datas ja existentes por `recorrencia_id`, e um indice unico em `(recorrencia_id, data)` e a rede de seguranca contra concorrencia. Rodar `/recorrencias/processar` duas vezes nao duplica.
+- **Exclusao preserva historico:** apagar uma recorrencia apenas desvincula (`recorrencia_id = NULL`) os lancamentos gerados; o passado continua no resumo.
+- **Batch mode no SQLite:** SQLite nao suporta `ALTER TABLE ADD CONSTRAINT`, entao a migracao que cria a FK usa `op.batch_alter_table` (recria a tabela copiando os dados). Vale entender esse limite antes de rodar migracoes em SQLite.
 - **Alembic em vez de `create_all`:** o esquema do banco e versionado em migracoes (`alembic/versions`). Para criar uma nova migracao apos mudar `models.py`, rode `alembic revision --autogenerate -m "descricao"` e revise o arquivo antes de aplicar com `alembic upgrade head`.
 
 ## Observacoes
